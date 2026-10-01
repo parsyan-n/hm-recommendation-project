@@ -1,0 +1,15 @@
+# Python & Jupyter Notebook
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+
+# Virtual environments
+venv/
+.env/
+env/
+
+# Data files (do not upload large datasets to GitHub)
+data/
+*.csv
+*.parquet
+*.zip
