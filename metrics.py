@@ -1,15 +1,4 @@
-import pandas as pd 
 import numpy as np 
-
-articles=pd.read_parquet('data/articles_processed.parquet')
-customers=pd.read_parquet('data/customers_processed.parquet')
-transactions=pd.read_parquet('data/transactions_processed.parquet')
-
-
-last_date=transactions['t_dat'].max()
-val_start=last_date-pd.Timedelta(days=6)
-train=transactions[transactions['t_dat']<val_start]
-val=transactions[transactions['t_dat']>=val_start]
 
 #================================================================================
 #                      Metrics
