@@ -1,14 +1,11 @@
-import numpy as np 
+import numpy as np
 
-#================================================================================
-#                      Metrics
-#================================================================================
 
 def evaluate(predictions, actuals, total_catalog_items, novelty_dict, k=12):
     precisions, recalls, map_scores, novelty_scores, ndcg_scores = [], [], [], [], []
     recommended_unique_items = set()
 
-    #discounts vector for NDCG@K speedup
+    # position 1..k -> log2(2)..log2(k+1)
     discounts = np.log2(np.arange(2, k + 2))
 
     for user_id, recs in predictions.items():
@@ -26,7 +23,7 @@ def evaluate(predictions, actuals, total_catalog_items, novelty_dict, k=12):
         precisions.append(hits / k)
         recalls.append(hits / len(true_items))
 
-        # 2. Average Precision (MAP@K)
+        # 2. MAP@K
         score = 0.0
         num_hits = 0.0
         for i, p in enumerate(top_k_recs):
@@ -36,16 +33,13 @@ def evaluate(predictions, actuals, total_catalog_items, novelty_dict, k=12):
         map_scores.append(score / min(len(true_items), k))
 
         # 3. NDCG@K
-        hits_binary = [1 if p in true_items else 0 for p in top_k_recs]
-        if any(hits_binary):
-            dcg = np.sum(hits_binary / discounts[:len(hits_binary)])
-            ideal_hits = sorted(hits_binary, reverse=True)
-            idcg = np.sum(ideal_hits / discounts[:len(ideal_hits)])
-            ndcg_scores.append(dcg / idcg)
-        else:
-            ndcg_scores.append(0.0)
+        hits_binary = np.array([1 if p in true_items else 0 for p in top_k_recs])
+        dcg = np.sum(hits_binary / discounts[:len(hits_binary)])
+        n_ideal = min(len(true_items), k)               # best case: all real purchases at the top
+        idcg = np.sum(1.0 / discounts[:n_ideal])
+        ndcg_scores.append(dcg / idcg)
 
-        # 4. Novelty (Self-Information)
+        # 4. Novelty (self-information)
         user_novelty = np.mean([novelty_dict.get(item, 20.0) for item in top_k_recs])
         novelty_scores.append(user_novelty)
 
