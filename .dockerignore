@@ -1,0 +1,7 @@
+# Exclude heavy dataset files and virtual environments
+data/
+datasets/
+.git
+.venv
+venv/
+__pycache__/
