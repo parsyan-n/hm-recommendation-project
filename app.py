@@ -1,6 +1,11 @@
-import streamlit as st
-import pandas as pd
+import io
 import os
+import pandas as pd
+import streamlit as st
+from PIL import Image
+from remotezip import RemoteZip
+
+ZIP_URL = "https://huggingface.co/datasets/Nonna123321/hm_images/resolve/main/images.zip"
 
 st.set_page_config(page_title="H&M Hybrid Recommender", layout="wide", page_icon="🛍️")
 
@@ -30,6 +35,26 @@ def load_articles():
                 
         return info_map
     return {}
+
+def get_image_from_remote_zip(item_id):
+    formatted_item_id = str(item_id).strip().zfill(10)
+    folder_name = formatted_item_id[:3]
+    internal_path = f"images/{folder_name}/{formatted_item_id}.jpg"
+    
+    try:
+        with RemoteZip(ZIP_URL) as rzip:
+            namelist = rzip.namelist()
+            if internal_path in namelist:
+                with rzip.open(internal_path) as f:
+                    return Image.open(io.BytesIO(f.read()))
+            else:
+                alt_path = f"{folder_name}/{formatted_item_id}.jpg"
+                if alt_path in namelist:
+                    with rzip.open(alt_path) as f:
+                        return Image.open(io.BytesIO(f.read()))
+    except Exception:
+        pass
+    return None
 
 article2info = load_articles()
 
@@ -64,10 +89,9 @@ with tab2:
         recs_df = pd.read_csv(recs_path)
         
         sample_customers = recs_df['customer_id'].head(5).tolist()
-        st.caption(f"Փորձարկման համար օրինակ ID-ներ՝ `{'6cc121e5cc202d2bf344ffe795002bdbf87178054bcda2e57161f0ef810a4b55'}`")
+        st.caption(f"Փորձարկման համար օրինակ ID-ներ՝ `6cc121e5cc202d2bf344ffe795002bdbf87178054bcda2e57161f0ef810a4b55`")
         
         user_input = st.text_input("Մուտքագրեք Customer ID-ն:", value='6cc121e5cc202d2bf344ffe795002bdbf87178054bcda2e57161f0ef810a4b55')
-        
         
         EXCLUDED_KEYWORDS = {
             'underwear', 'socks', 'tights', 'nightwear', 'swimwear', 
@@ -95,7 +119,6 @@ with tab2:
                     idx = info.get('index', '').lower()
                     tp = info.get('type', '').lower()
                     
-                    
                     is_excluded = any(
                         kw in grp or kw in idx or kw in tp 
                         for kw in EXCLUDED_KEYWORDS
@@ -114,12 +137,9 @@ with tab2:
                         st.markdown(f"**#{idx_col+1} Article ID**")
                         st.code(item_id, language="text")
                         
-                        formatted_item_id = str(item_id).zfill(10)
-                        folder_name = formatted_item_id[:3]
-                        image_path = f"data/images/{folder_name}/{formatted_item_id}.jpg"
-
-                        if os.path.exists(image_path):
-                            st.image(image_path, use_container_width=True)
+                        img = get_image_from_remote_zip(item_id)
+                        if img is not None:
+                            st.image(img, use_container_width=True)
                         else:
                             st.image(
                                 "https://via.placeholder.com/200x250/f0f2f6/333333?text=No+Image", 
