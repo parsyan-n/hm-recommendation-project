@@ -3,9 +3,4 @@
 1,Recent Popularity Baseline,Top 12 items from last 7 days of train,0.00875,0.01576,0.00591,0.0255,13.94472,0.00011
 2,Repeat Purchases + Recent Pop Baseline,Customer history filled with recent popular items,0.0097,0.01538,0.00444,0.02459,14.46012,0.5639
 3,Top 5 Repeat + Recent Pop Baseline,Last 5 repeated items filled with recent popular,0.01056,0.01831,0.00614,0.03143,13.99203,0.42387
-4,Item-Item Cosine Similarity,Cosine Similarity with K=20,0.01092,0.01704,0.0049,0.02707,14.76695,0.68818
-5,Hybrid: 6 recent repeat + Cosine,Top 6 repeat items from last 4 weeks filled with Cosine recs,0.02163,0.0301,0.00732,0.04069,14.85162,0.67524
-6,"Standard ALS (f=64, reg=0.1, alpha=5)",Implicit ALS Matrix Factorization on full interaction matrix,0.0084,0.01391,0.00451,0.02045,12.03522,0.01803
-7,ALS Time-Decay (half_life=14),ALS with exponential time-decay weights (half_life=14 days),0.01875,0.02932,0.00889,0.04348,13.75496,0.009
-8,Hybrid: 6 recent repeat + Time-Decay ALS,Top 6 repeat items filled with Time-Decay ALS (half_life=14),0.0251,0.03754,0.01073,0.05542,13.93104,0.1546
-9,"Hybrid: Repeat (2w window, N=5) + ALS Decay",Optimal history window (2 weeks) with 5 repeat items filled by Time-Decay ALS,0.02606,0.03824,0.01067,0.05465,13.85784,0.1142
+4,FINAL MODEL: 6 recent repeat + Cosine,"Top 6 repeat items from last 4 weeks, filled with Cosine recs. Chosen on val for MAP@12/Coverage balance.",0.02163,0.0301,0.00732,0.04069,14.85162,0.67524

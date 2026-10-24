@@ -6,4 +6,4 @@ implicit
 requests
 Pillow
 huggingface_hub
-remotezip
+remotezip 

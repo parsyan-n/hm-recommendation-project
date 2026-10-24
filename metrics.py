@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def evaluate(predictions, actuals, total_catalog_items, novelty_dict, k=12):
+def evaluate(predictions, actuals, total_catalog_items, novelty_dict,max_novelty, k=12):
     precisions, recalls, map_scores, novelty_scores, ndcg_scores = [], [], [], [], []
     recommended_unique_items = set()
 
@@ -20,7 +20,7 @@ def evaluate(predictions, actuals, total_catalog_items, novelty_dict, k=12):
 
         # 1. Precision & Recall
         hits = len(set(top_k_recs) & true_items)
-        precisions.append(hits / k)
+        precisions.append(hits / min(k, len(top_k_recs)))
         recalls.append(hits / len(true_items))
 
         # 2. MAP@K
@@ -40,7 +40,7 @@ def evaluate(predictions, actuals, total_catalog_items, novelty_dict, k=12):
         ndcg_scores.append(dcg / idcg)
 
         # 4. Novelty (self-information)
-        user_novelty = np.mean([novelty_dict.get(item, 20.0) for item in top_k_recs])
+        user_novelty = np.mean([novelty_dict.get(item, max_novelty) for item in top_k_recs])
         novelty_scores.append(user_novelty)
 
         # 5. Coverage

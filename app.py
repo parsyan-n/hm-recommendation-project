@@ -1,151 +1,177 @@
 import io
 import os
+import threading
+
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 from remotezip import RemoteZip
 
 ZIP_URL = "https://huggingface.co/datasets/Nonna123321/hm_images/resolve/main/images.zip"
+RESULTS_PATH = "results/model_test_results.csv"
+RECS_PATH = "results/customer_recommendations.csv"
+
+# Example customer: one of the 20 most active customers in the train period (heavy buyer)
+HEAVY_BUYER_ID = "6cc121e5cc202d2bf344ffe795002bdbf87178054bcda2e57161f0ef810a4b55"
+
+N_DISPLAY = 12
+ACCURACY_COLS = ["MAP@12", "NDCG@12", "Precision@12", "Recall@12", "Coverage"]
 
 st.set_page_config(page_title="H&M Hybrid Recommender", layout="wide", page_icon="🛍️")
 
+
+# ------------------------------------------------------------------------------
+# Data loading (cached)
+# ------------------------------------------------------------------------------
 @st.cache_data
-def load_articles():
-    articles_path = "data/articles.csv"
-    if os.path.exists(articles_path):
-        df = pd.read_csv(articles_path, dtype={'article_id': str})
-        
-        info_map = {}
-        for _, row in df.iterrows():
-            aid_str = str(row['article_id']).zfill(10)
-            try:
-                aid_int = int(row['article_id'])
-            except ValueError:
-                aid_int = None
-                
-            details = {
-                'group': str(row.get('product_group_name', '')),
-                'index': str(row.get('index_name', '')),
-                'type': str(row.get('product_type_name', ''))
-            }
-            
-            info_map[aid_str] = details
-            if aid_int is not None:
-                info_map[aid_int] = details
-                
-        return info_map
-    return {}
+def load_recommendations():
+    """customer_id -> space-separated article ids (top-12, already filtered)."""
+    if not os.path.exists(RECS_PATH):
+        return None
+    df = pd.read_csv(RECS_PATH, dtype={"customer_id": str})
+    return df.set_index("customer_id")["recommendations"]
 
-def get_image_from_remote_zip(item_id):
-    formatted_item_id = str(item_id).strip().zfill(10)
-    folder_name = formatted_item_id[:3]
-    internal_path = f"images/{folder_name}/{formatted_item_id}.jpg"
-    
+
+@st.cache_data
+def load_results():
+    if not os.path.exists(RESULTS_PATH):
+        return None
+    df = pd.read_csv(RESULTS_PATH, index_col=0)
+    if "Model" in df.columns:
+        df = df.set_index("Model")
+    return df
+
+
+# ------------------------------------------------------------------------------
+# Images 
+# ------------------------------------------------------------------------------
+@st.cache_resource(show_spinner=False)
+def get_remote_zip():
+    return RemoteZip(ZIP_URL), threading.Lock()
+
+
+@st.cache_data(show_spinner=False)
+def fetch_image_bytes(item_id):
+    """Returns the jpg bytes, or None if the image is not in the archive.
+    Raises on network errors, so failures are not cached."""
+    item = str(item_id).strip().zfill(10)
+    folder = item[:3]
+    candidates = [f"images/{folder}/{item}.jpg", f"{folder}/{item}.jpg"]
+
+    last_error = None
+    for _ in range(2):  
+        try:
+            rzip, lock = get_remote_zip()
+            with lock:
+                for path in candidates:
+                    try:
+                        return rzip.read(path)
+                    except KeyError:
+                        continue
+            return None
+        except Exception as e:
+            last_error = e
+            get_remote_zip.clear()
+    raise RuntimeError(f"Could not fetch image {item}") from last_error
+
+
+def load_image(item_id):
     try:
-        with RemoteZip(ZIP_URL) as rzip:
-            namelist = rzip.namelist()
-            if internal_path in namelist:
-                with rzip.open(internal_path) as f:
-                    return Image.open(io.BytesIO(f.read()))
-            else:
-                alt_path = f"{folder_name}/{formatted_item_id}.jpg"
-                if alt_path in namelist:
-                    with rzip.open(alt_path) as f:
-                        return Image.open(io.BytesIO(f.read()))
+        data = fetch_image_bytes(item_id)
     except Exception:
-        pass
-    return None
+        return None
+    if data is None:
+        return None
+    try:
+        return Image.open(io.BytesIO(data))
+    except Exception:
+        return None
 
-article2info = load_articles()
 
+def placeholder_image(width=200, height=250):
+    img = Image.new("RGB", (width, height), "#f0f2f6")
+    ImageDraw.Draw(img).text((width // 2 - 30, height // 2 - 5), "No image", fill="#555555")
+    return img
+
+
+# ------------------------------------------------------------------------------
+# Page
+# ------------------------------------------------------------------------------
 st.title("🛍️ H&M Fashion Recommendation System")
-st.markdown("**Ավարտական նախագիծ**՝ *Hybrid Model (Repeat Purchases + Time-Decay ALS)*")
+st.markdown("**Ավարտական նախագիծ**՝ *Hybrid Model (Repeat Purchases + Item-Item Cosine)*")
+
+with st.expander("ℹ️ Մոդելի և demo-ի մասին"):
+    st.markdown(
+        """
+* **Մոդել.** հաճախորդի վերջին 4 շաբաթվա 6 ամենահաճախ գնված ապրանքները դրվում են ցուցակի սկզբում, մնացածը լրացվում է Item-Item Cosine մոդելի առաջարկներով։
+* **Առաջարկները նախապես հաշվված են** և վերաբերում են միայն այն հաճախորդներին, ովքեր գնում են կատարել test շաբաթվա ընթացքում։
+"""
+    )
 
 st.divider()
 
 tab1, tab2 = st.tabs(["📊 Model Evaluation", "🎯 Customer Recommendations"])
 
+# ------------------------------------------------------------------------------
+# Tab 1: evaluation table
+# ------------------------------------------------------------------------------
 with tab1:
     st.header("Test Set Performance Metrics")
-    results_path = "results/model_test_results.csv"
-    
-    if os.path.exists(results_path):
-        df_results = pd.read_csv(results_path, index_col=0)
-        
-        st.dataframe(
-            df_results.style.highlight_max(axis=0, color="#d4edda"),
-            use_container_width=True
-        )
-        st.info("💡 **Best Model:** Hybrid (5 Repeat + Time-Decay ALS Decay) ապահովում է առավելագույն MAP@12 և NDCG@12:")
-    else:
-        st.error("`results/model_test_results.csv` ֆայլը չի գտնվել:")
+    df_results = load_results()
 
+    if df_results is not None:
+        numeric_cols = df_results.select_dtypes("number").columns.tolist()
+        highlight_cols = [c for c in ACCURACY_COLS if c in numeric_cols]
+        styled = (
+            df_results.style
+            .highlight_max(subset=highlight_cols, axis=0, color="#d4edda")
+            .format({c: "{:.5f}" for c in numeric_cols})
+        )
+        st.dataframe(styled)
+        st.info(
+            "💡 **Final Model:** Hybrid (6 Repeat + Item-Item Cosine). Ընտրված է validation-ում "
+            "MAP@12-ի և Coverage-ի հավասարակշռությամբ (Time-Decay ALS hybrid-ն ուներ ավելի բարձր MAP, "
+            "բայց Coverage-ը շատ ցածր էր)։"
+        )
+    else:
+        st.error(f"`{RESULTS_PATH}` ֆայլը չի գտնվել:")
+
+# ------------------------------------------------------------------------------
+# Tab 2: recommendations
+# ------------------------------------------------------------------------------
 with tab2:
     st.header("Get Personal Recommendations")
-    
-    recs_path = "results/customer_recommendations.csv"
-    
-    if os.path.exists(recs_path):
-        recs_df = pd.read_csv(recs_path)
-        
-        sample_customers = recs_df['customer_id'].head(5).tolist()
-        st.caption(f"Փորձարկման համար օրինակ ID-ներ՝ `6cc121e5cc202d2bf344ffe795002bdbf87178054bcda2e57161f0ef810a4b55`")
-        
-        user_input = st.text_input("Մուտքագրեք Customer ID-ն:", value='6cc121e5cc202d2bf344ffe795002bdbf87178054bcda2e57161f0ef810a4b55')
-        
-        EXCLUDED_KEYWORDS = {
-            'underwear', 'socks', 'tights', 'nightwear', 'swimwear', 
-            'bra', 'lingerie', 'underwear/nightwear', 'socks & tights'
-        }
-        
-        if st.button("Ստանալ Top-12 Առաջարկները", type="primary"):
-            user_recs = recs_df[recs_df['customer_id'] == user_input]
-            
-            if not user_recs.empty:
-                items_str = user_recs.iloc[0]['recommendations']
-                items_list = items_str.split()
-                
-                filtered_items = []
-                for item_id in items_list:
-                    clean_id_str = str(item_id).strip().zfill(10)
-                    try:
-                        clean_id_int = int(item_id)
-                    except ValueError:
-                        clean_id_int = None
+    recs = load_recommendations()
 
-                    info = article2info.get(clean_id_str, article2info.get(clean_id_int, {}))
-                    
-                    grp = info.get('group', '').lower()
-                    idx = info.get('index', '').lower()
-                    tp = info.get('type', '').lower()
-                    
-                    is_excluded = any(
-                        kw in grp or kw in idx or kw in tp 
-                        for kw in EXCLUDED_KEYWORDS
-                    )
-                    
-                    if not is_excluded:
-                        filtered_items.append(item_id)
-                
-                display_items = filtered_items[:12]
-                
-                st.success(f"Գտնված են 12 առաջարկներ `{user_input[:15]}...`-ի համար․")
-                
-                cols = st.columns(4)
-                for idx_col, item_id in enumerate(display_items):
-                    with cols[idx_col % 4]:
-                        st.markdown(f"**#{idx_col+1} Article ID**")
-                        st.code(item_id, language="text")
-                        
-                        img = get_image_from_remote_zip(item_id)
-                        if img is not None:
-                            st.image(img, use_container_width=True)
-                        else:
-                            st.image(
-                                "https://via.placeholder.com/200x250/f0f2f6/333333?text=No+Image", 
-                                use_container_width=True
-                            )
-            else:
-                st.warning("Այս Customer ID-ն չի գտնվել test բազայում:")
+    if recs is None:
+        st.error(f"`{RECS_PATH}` ֆայլը չի գտնվել:")
     else:
-        st.error("`results/customer_recommendations.csv` ֆայլը չի գտնվել:")
+        if "customer_id_input" not in st.session_state:
+            st.session_state.customer_id_input = HEAVY_BUYER_ID
+
+        col_a, col_b = st.columns(2)
+        if col_a.button("🎲 Պատահական հաճախորդ"):
+            st.session_state.customer_id_input = recs.sample(1).index[0]
+        if col_b.button("⭐ Ակտիվ գնորդի օրինակ"):
+            st.session_state.customer_id_input = HEAVY_BUYER_ID
+
+        user_input = st.text_input("Մուտքագրեք Customer ID-ն:", key="customer_id_input").strip()
+
+        if st.button("Ստանալ Top-12 առաջարկները", type="primary"):
+            if user_input in recs.index:
+                display_items = recs[user_input].split()[:N_DISPLAY]
+
+                st.success(f"{len(display_items)} առաջարկ՝ `{user_input[:15]}...` հաճախորդի համար")
+
+                cols = st.columns(4)
+                with st.spinner("Նկարները բեռնվում են..."):
+                    for rank, item_id in enumerate(display_items, start=1):
+                        with cols[(rank - 1) % 4]:
+                            img = load_image(item_id)
+                            st.image(img if img is not None else placeholder_image(),
+                                     caption=f"#{rank} · {item_id}")
+            else:
+                st.warning(
+                    "Այս Customer ID-ն չկա ցուցակում. առաջարկները գեներացված են միայն այն "
+                    "հաճախորդների համար, ովքեր գնում են կատարել test շաբաթվա ընթացքում։"
+                )
