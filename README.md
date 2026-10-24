@@ -5,7 +5,7 @@ recommendation համակարգ H&M-ի իրական գնումների տվյա�
 transaction, 1.3M+ հաճախորդ, 105K+ ապրանք)՝ EDA-ից մինչև deployed
 Streamlit demo։
 
-**🔗 Live demo:** [...link, երբ deploy անես...]
+**🔗 Live demo:** https://hm-recommendation-project-nj7wtwcj9fznj9upxrpyat.streamlit.app/
 
 ## Նպատակը
 
